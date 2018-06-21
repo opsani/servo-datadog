@@ -110,7 +110,7 @@ class Datadog(Measure):
     def _init_datadog(self):
 
         # as required:  read api_key and app_key from files (e.g., from k8s
-        # secret volume mount
+        # secret volume mounted files)
         if not hasattr(self, 'datadog_api_key'):
             assert os.path.isfile(API_KEY_FPATH), \
                 'Datadog api_key file {} does not exist'.format(API_KEY_FPATH)

@@ -86,7 +86,7 @@ measurement:
         query: 'docker.net.bytes_sent{kube_namespace:abc}by{kube_deployment}'
         time_aggr:   avg
         space_aggr:  sum
-    my_load_avg:  # user-named metric
+    my_cpu_usage:  # user-named metric
       ...
       userdata:
         query: 'docker.cpu.usage{kube_namespace:abc}'
