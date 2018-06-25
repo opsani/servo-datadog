@@ -11,8 +11,8 @@ returns a *group* of time series pointlists, one for *each* k8s deployment in th
 
 The driver presently returns a single value for a metric named `perf`.  This value is computed from the time series pointlist(s) returned from a single query as follows:
 
-* time aggregation:  compute a value for each time series pointlist using one of these methods:  avg, max, min, sum
-* space aggregation:  compute a single value for the entire *group* of time series by aggregating the time aggregations using one of these methods:  avg, max, min, sum (if there is just one pointlist, these are all the same)
+* time aggregation:  aggregate each time series pointlist to produce a single value using one of these methods:  avg, max, min, sum
+* space aggregation:  aggregate the time aggregates to produce a single value (perf metric) using one of these methods:  avg, max, min, sum (if there is just one pointlist, these are all the same)
 
 The Datadog driver does not presently support multiple queries (e.g., so that a performance metric may be created by a formula using multiple query results).  The `describe` command returns the list of active metric names.  By itself, a metric name is often not a valid query, and such a query will return an error.
 
@@ -64,6 +64,7 @@ measurement:
       time_aggr:   avg       # compute time-series value as the average
       space_aggr:  sum       # compute group value (the perf metric) as
                              # the sum of all time series aggregate values
+      pre_cmd_async:  'ab -c 10 -rkl -t 1000 http://c4:8080/'
 ```
 
 * `warmup`:  period after adjustment when a measurement is not taken (sleep).  Default 0 seconds.
@@ -71,6 +72,9 @@ measurement:
 * `query`: a Datadog metric time series query.  Required. 
 * `time_aggr`:  aggregation method for time series pointlists.  One of avg|max|min|sum.  Default `avg`.
 * `space_aggr`:  aggregation method for time series aggregate values - used to create a single `perf` metric value.  One of avg|max|min|sum.  Default `avg`.
+* `pre_cmd_async`:  Bash shell command to execute prior to warmup.  This optional command may be a string or a list.  This command is executed asynchronously with stdout/stderr directed to /dev/null.  If the process is still running after measurement, it is terminated.  This command is suitable for generating load during measurement, typically for testing purposes, as in the example above.
+* `pre_cmd`:  Bash shell command to execute prior to warmup.  This optional command may be a string or a list.
+* `post_cmd`:  Bash shell command to execute after measurement.  This optional command may be a string or a list.
 
 __FUTURE__:  when this driver supports multiple queries (and user-named metrics), the configuration for `query`, `time_aggr` and `space_aggr` may be provided for each user-named metric, in the `metrics` section of the descriptor rather than the `control` section, e.g.:
 
