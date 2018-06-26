@@ -141,12 +141,12 @@ class Datadog(Measure):
             assert os.path.isfile(API_KEY_FPATH), \
                 'Datadog api_key file {} does not exist'.format(API_KEY_FPATH)
             with open(API_KEY_FPATH, 'r') as f:
-                self.datadog_api_key = f.read()
+                self.datadog_api_key = f.read().rstrip()
         if not hasattr(self, 'datadog_app_key'):
             assert os.path.isfile(APP_KEY_FPATH), \
                 'Datadog app_key file {} does not exist'.format(APP_KEY_FPATH)
             with open(APP_KEY_FPATH, 'r') as f:
-                self.datadog_app_key = f.read()
+                self.datadog_app_key = f.read().rstrip()
 
         # initialize datadog api module
         options = {
@@ -175,7 +175,8 @@ class Datadog(Measure):
         # verify query status and response type
         q_status = data.get('status')
         assert q_status == 'ok', \
-            'Datadog query {} returned with status {}'.format(query, q_status)
+            'Datadog query {} returned with status {} errors {}'.format(query,
+            q_status, data.get('errors'))
         q_res_type = data.get('res_type')
         assert q_res_type == 'time_series', \
             'Datadog query {} res_type is not time_series but {}'.format(
