@@ -20,7 +20,7 @@ DFLT_WARMUP     = 0
 DFLT_DURATION   = 120
 DFLT_TIME_AGGR  = 'avg'
 DFLT_SPACE_AGGR = 'avg'
-AGGR_OPERATORS  = ('avg', 'max', 'min', 'sum')
+AGGR_OPERATORS  = ('avg', 'max', 'min', 'sum', 'raw')
 API_KEY_FPATH   = '/etc/optune-datadog-auth/api_key'
 APP_KEY_FPATH   = '/etc/optune-datadog-auth/app_key'
 
@@ -109,9 +109,10 @@ class Datadog(Measure):
             os.killpg(os.getpgid(self.proc_async.pid), signal.SIGTERM)
 
         # construct result:  use computed value for perf metric
+        val_key = "values" if space_aggr == "raw" else "value"
         metrics = {
             'perf': {
-                'value' : qval,
+                val_key : qval,
                 'annotation': query,
             }
         }
@@ -181,6 +182,12 @@ class Datadog(Measure):
         assert q_res_type == 'time_series', \
             'Datadog query {} res_type is not time_series but {}'.format(
             query, q_res_type)
+
+        if space_aggr == "raw": # send metric data as-is, let server-side aggregate
+            d = []
+            for s in data.get('series',[]):
+                d.append( {"id": s.get("scope", ""), "data" : s["pointlist"]} )
+            return d
 
         # get list of metric series from data
         m_series = data.get('series',[])
