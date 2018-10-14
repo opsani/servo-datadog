@@ -24,6 +24,26 @@ AGGR_OPERATORS  = ('avg', 'max', 'min', 'sum', 'raw')
 API_KEY_FPATH   = '/etc/optune-datadog-auth/api_key'
 APP_KEY_FPATH   = '/etc/optune-datadog-auth/app_key'
 
+def inst_id(metric):
+    """get a suitable instance ID from a datadog series record. The 'scope' value is taken and post-processed to make it shorter if it turns out to be coming from a k8s cluster"""
+
+    #
+    i = s.get("scope", "")
+    if not i: # we have no alternative to scope for now, return empty
+        return i
+
+    #kube_deployment:c1,kube_namespace:lk
+    a = i.split(",")
+    if not a[0].startswith("kube_deployment:"):
+        return i
+
+    ns = ""
+    dep = a[0][len("kube_deployment:"):]
+    if len(a) > 1 and a[1].startswith("kube_namespace:"):
+        ns = a[1][len("kube_namespace:"):]+"."
+
+    return "dep:" + ns + dep
+
 class Datadog(Measure):
 
     # overwrites super
@@ -186,7 +206,7 @@ class Datadog(Measure):
         if space_aggr == "raw": # send metric data as-is, let server-side aggregate
             d = []
             for s in data.get('series',[]):
-                d.append( {"id": s.get("scope", ""), "data" : s["pointlist"]} )
+                d.append( {"id": inst_id(s), "data" : s["pointlist"]} )
             return d
 
         # get list of metric series from data
