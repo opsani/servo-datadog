@@ -28,7 +28,7 @@ def inst_id(metric):
     """get a suitable instance ID from a datadog series record. The 'scope' value is taken and post-processed to make it shorter if it turns out to be coming from a k8s cluster"""
 
     #
-    i = s.get("scope", "")
+    i = metric.get("scope", "")
     if not i: # we have no alternative to scope for now, return empty
         return i
 
