@@ -32,17 +32,26 @@ def inst_id(metric):
     if not i: # we have no alternative to scope for now, return empty
         return i
 
-    #kube_deployment:c1,kube_namespace:lk
-    a = i.split(",")
-    if not a[0].startswith("kube_deployment:"):
+    # try to interpret as tag:value,tag:value, ...
+    # e.g.: kube_deployment:c1,kube_namespace:lk
+    d = [ x.split(":") for x in i.split(",") ]
+    if not all(( len(x) == 2 for x in d )):
         return i
 
-    ns = ""
-    dep = a[0][len("kube_deployment:"):]
-    if len(a) > 1 and a[1].startswith("kube_namespace:"):
-        ns = a[1][len("kube_namespace:"):]+"."
+    d = dict(d)
+    if "kube_deployment" not in d: # special treatment if this tag is present, otherwise just return the scope as-is
+        return i
 
-    return "dep:" + ns + dep
+    a = []
+    try:
+        a.append( d.pop("kube_namespace") )
+    except KeyError:
+        pass
+    a.append( d.pop("kube_deployment") )
+
+    a.extend( ( v for k,v in sorted (d.items()) ) )
+
+    return "dep:"+".".join(a)
 
 class Datadog(Measure):
 
