@@ -1,0 +1,14 @@
+datadog:
+  metrics:
+    cpu_usage:
+      query: kubernetes.cpu.usage.total{kube_namespace:default}by{pod_name}
+      use_as_instance_id: pod_name
+      unit: millicores
+    memory_usage:
+      query: kubernetes.memory.usage{kube_namespace:default}by{pod_name}
+      use_as_instance_id: pod_name
+      unit: bytes
+    replicas:
+      query: kubernetes.pods.running{kube_namespace:default}by{kube_namespace}
+      use_as_instance_id: kube_namespace
+      unit: bytes

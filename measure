@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-
+import json
 import os
-import signal
-import subprocess
 import sys
 import time
 
+import yaml
 from datadog import initialize
 from datadog import api as dog
 
@@ -23,35 +22,26 @@ DFLT_SPACE_AGGR = 'avg'
 AGGR_OPERATORS  = ('avg', 'max', 'min', 'sum', 'raw')
 API_KEY_FPATH   = '/etc/optune-datadog-auth/api_key'
 APP_KEY_FPATH   = '/etc/optune-datadog-auth/app_key'
+CONFIG_FPATH    = os.getenv('CONFIG_FPATH', './config.yaml')
 
-def inst_id(metric):
-    """get a suitable instance ID from a datadog series record. The 'scope' value is taken and post-processed to make it shorter if it turns out to be coming from a k8s cluster"""
+
+def inst_id(metric, metric_name, group_name):
+    """get a suitable instance ID from a datadog series record.
+    The 'scope' value is taken and post-processed to make it shorter if it turns out to be coming from a k8s cluster"""
 
     #
-    i = metric.get("scope", "")
-    if not i: # we have no alternative to scope for now, return empty
-        return i
+    scope = metric.get("scope")
+    assert scope, 'Metric "{}" has to be grouped by some property, so we can define ' \
+                  'it\'s multi-instance result ids'.format(metric_name)
 
     # try to interpret as tag:value,tag:value, ...
     # e.g.: kube_deployment:c1,kube_namespace:lk
-    d = [ x.split(":") for x in i.split(",") ]
-    if not all(( len(x) == 2 for x in d )):
-        return i
+    tags = dict([tag.split(':') for tag in scope.split(',')])
 
-    d = dict(d)
-    if "kube_deployment" not in d: # special treatment if this tag is present, otherwise just return the scope as-is
-        return i
+    assert group_name in tags, 'Cannot find group {} in response on metric "{}"'.format(group_name, metric_name)
 
-    a = []
-    try:
-        a.append( d.pop("kube_namespace") )
-    except KeyError:
-        pass
-    a.append( d.pop("kube_deployment") )
+    return tags.get(group_name)
 
-    a.extend( ( v for k,v in sorted (d.items()) ) )
-
-    return "dep:"+".".join(a)
 
 class Datadog(Measure):
 
@@ -59,7 +49,7 @@ class Datadog(Measure):
     def describe(self):
 
         # get dict of metrics active in the last 24 hours
-        self._init_datadog()
+        self.init_datadog()
         from_time = int(time.time()) - (60 * 60 * 24)
         data = dog.Metric.list(from_time)
         self.debug('Datadog describe response: ', data)
@@ -69,7 +59,7 @@ class Datadog(Measure):
             'Datadog server did not return list of active metrics'
         assert len(data['metrics']) > 0, \
             'Datadog server returned empty list of metrics'
-        metrics = {m:{} for m in data['metrics']}
+        metrics = {m: {} for m in data['metrics']}
         return metrics
 
     # overwrites super
@@ -81,7 +71,14 @@ class Datadog(Measure):
 
     # overwrites super
     def measure(self):
-
+        try:
+            config = yaml.load(open(CONFIG_FPATH))['datadog']
+        except yaml.YAMLError as e:
+            e.__cause__ = 'Error parsing config file located at {}: {}'.format(CONFIG_FPATH, e.__cause__)
+            raise
+        except KeyError:
+            raise KeyError('No `datadog` configuration has been provided in config file located '
+                           'at {}'.format(CONFIG_FPATH))
         # parse and valcheck control configuration
         assert 'control' in self.input_data, 'Input data missing control configuration'
         control  = self.input_data['control']
@@ -89,39 +86,38 @@ class Datadog(Measure):
         duration = int(control.get('duration', DFLT_DURATION))
         assert warmup >= 0 and duration >= 0, \
             'Both warmup {} and duration {} must be non-negative'.format(warmup, duration)
-        assert 'userdata' in control, 'Control configuration missing userdata'
-        userdata = control['userdata']
-        assert 'query' in userdata, 'Query missing from control configuration userdata'
-        query = userdata['query'].replace(' ','')
-        time_aggr = userdata.get('time_aggr', DFLT_TIME_AGGR)
-        assert time_aggr in AGGR_OPERATORS, \
-            'Unknown time_aggr {}'.format(time_aggr)
-        space_aggr  = userdata.get('space_aggr', DFLT_SPACE_AGGR)
-        assert space_aggr in AGGR_OPERATORS, \
-            'Unknown space_aggr {}'.format(space_aggr)
+        assert config and config.get('metrics'), 'No metrics has been provided at path "datadog.metrics" ' \
+                                                 'in file located at {}'.format(CONFIG_FPATH)
 
-        # query datadog:  verify query is valid
-        self._init_datadog()
-        qval = self._query_datadog_metric(query, time_aggr, space_aggr, duration)
-        self.debug('Initial value for query {}:  {}'.format(query, qval))
+        metrics = {}
+        for metric_name, metric in config['metrics'].items():
+            group_name = metric['use_as_instance_id']
+            assert group_name, 'Property "use_as_instance_id" for metric "{}" has to be set. ' \
+                               'It tells the driver what scope parameter to use when defining ' \
+                               'instance id for particular metric.'.format(metric_name)
+            query = metric['query'].replace(' ', '')
 
-        # sleep
-        self.t_sleep = warmup + duration
-        self.debug('Sleeping for {:d} seconds ({:d} warmup + {:d} duration)'.format(
-            self.t_sleep, warmup, duration))
-        time.sleep(self.t_sleep)
+            # query datadog:  verify query is valid
+            self.init_datadog()
+            qval = self.query_datadog_metric(query, duration, metric_name, group_name)
+            self.debug('Initial value for query {}:  {}'.format(query, qval))
 
-        # query datadog:  measure
-        qval = self._query_datadog_metric(query, time_aggr, space_aggr, duration)
+            # sleep
+            self.t_sleep = warmup + duration
+            self.debug('Sleeping for {:d} seconds ({:d} warmup + {:d} duration)'.format(self.t_sleep, warmup, duration))
+            # time.sleep(self.t_sleep)
 
-        # construct result:  use computed value for perf metric
-        val_key = "values" if space_aggr == "raw" else "value"
-        metrics = {
-            'perf': {
-                val_key : qval,
-                'annotation': query,
-            }
-        }
+            # query datadog:  measure
+            qval = self.query_datadog_metric(query, duration, metric_name, group_name)
+
+            # construct result
+            metrics.update({
+                metric_name: {
+                    'values': qval,
+                    'annotation': query,
+                }
+            })
+
         annotations = {}
 
         return metrics, annotations
@@ -140,7 +136,7 @@ class Datadog(Measure):
         super().print_progress(message, msg_index, stage, stageprogress)
 
     # helper:  initialize datadog api module
-    def _init_datadog(self):
+    def init_datadog(self):
 
         # as required:  read api_key and app_key from files (e.g., from k8s
         # secret volume mounted files)
@@ -163,71 +159,31 @@ class Datadog(Measure):
         try:
             initialize(**options)
         except Exception as e:
-            raise Exception(
-                'Failed to initialize Datadog API module. Error: {}'.format(str(e)))
+            raise Exception('Failed to initialize Datadog API module. Error: {}'.format(str(e)))
 
     # helper:  query datadog metrics over last duration seconds and return
     # value computed from aggregating in time and space
-    def _query_datadog_metric(self, query, time_aggr, space_aggr, duration):
-
+    def query_datadog_metric(self, query, duration, metric_name, group_name):
         # query datadog metrics
         try:
             now = int(time.time())
             data = dog.Metric.query(start=now - duration, end=now, query=query)
         except Exception as e:
-            raise Exception(
-                'Failed to query Datadog for metric {}. Error: {}'.format(
-                    query, str(e)))
+            raise Exception('Failed to query Datadog for metric {}. Error: {}'.format(query, str(e)))
 
         # verify query status and response type
         q_status = data.get('status')
         assert q_status == 'ok', \
-            'Datadog query {} returned with status {} errors {}'.format(query,
-            q_status, data.get('errors'))
+            'Datadog query {} returned with status {} errors {}'.format(query, q_status, data.get('errors'))
         q_res_type = data.get('res_type')
         assert q_res_type == 'time_series', \
-            'Datadog query {} res_type is not time_series but {}'.format(
-            query, q_res_type)
+            'Datadog query {} res_type is not time_series but {}'.format(query, q_res_type)
 
-        if space_aggr == "raw": # send metric data as-is, let server-side aggregate
-            d = []
-            for s in data.get('series',[]):
-                d.append( {"id": inst_id(s), "data" : s["pointlist"]} )
-            return d
+        d = []
+        for s in data.get('series', []):
+            d.append({'id': inst_id(s, metric_name, group_name), 'data': [[int(p[0]), p[1]] for p in s['pointlist']]})
 
-        # get list of metric series from data
-        m_series = data.get('series',[])
-        assert len(m_series) >= 1, \
-            'Datadog query {} returned {} time series pointlists'.format(
-            query, len(m_series))
-
-        # aggregate in time
-        time_aggr_vals = []
-        for s in m_series:
-            plist = s.get('pointlist',[])
-            assert len(plist) > 0, \
-                'Datadog query {} returned empty pointlist for expression {}'.format(
-                query, len(plist), s.get('expression'))
-
-            # extract just values from pointlist, aggregate, and save
-            # note:  i[0] is the time in UTC milliseconds
-            pvals = [i[1] for i in plist]
-            time_aggr_vals.append(self._aggregate_values(pvals, time_aggr))
-
-        # aggregate in space and return value
-        return self._aggregate_values(time_aggr_vals, space_aggr)
-
-    # helper:  return an aggregate value computed from an input list of values
-    def _aggregate_values(self, vals, aggr):
-        if aggr == 'avg':
-            return sum(vals) / float(len(vals))
-        if aggr == 'max':
-            return max(vals)
-        if aggr == 'min':
-            return min(vals)
-        if aggr == 'sum':
-            return sum(vals)
-        raise Exception('Unexpected aggregation method {}'.format(aggr))
+        return d
 
 
 if __name__ == '__main__':
