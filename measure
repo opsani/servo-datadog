@@ -105,7 +105,7 @@ class Datadog(Measure):
             # sleep
             self.t_sleep = warmup + duration
             self.debug('Sleeping for {:d} seconds ({:d} warmup + {:d} duration)'.format(self.t_sleep, warmup, duration))
-            # time.sleep(self.t_sleep)
+            time.sleep(self.t_sleep)
 
             # query datadog:  measure
             qval = self.query_datadog_metric(query, duration, metric_name, group_name)
