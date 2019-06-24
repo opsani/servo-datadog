@@ -89,7 +89,8 @@ class Datadog(Measure):
         assert config and config.get('metrics'), 'No metrics has been provided at path "datadog.metrics" ' \
                                                  'in file located at {}'.format(CONFIG_FPATH)
 
-        metrics = {}
+        self.init_datadog()
+
         for metric_name, metric in config['metrics'].items():
             group_name = metric['use_as_instance_id']
             assert group_name, 'Property "use_as_instance_id" for metric "{}" has to be set. ' \
@@ -98,14 +99,21 @@ class Datadog(Measure):
             query = metric['query'].replace(' ', '')
 
             # query datadog:  verify query is valid
-            self.init_datadog()
             qval = self.query_datadog_metric(query, duration, metric_name, group_name)
             self.debug('Initial value for query {}:  {}'.format(query, qval))
 
-            # sleep
-            self.t_sleep = warmup + duration
-            self.debug('Sleeping for {:d} seconds ({:d} warmup + {:d} duration)'.format(self.t_sleep, warmup, duration))
-            time.sleep(self.t_sleep)
+        # sleep
+        self.t_sleep = warmup + duration
+        self.debug('Sleeping for {:d} seconds ({:d} warmup + {:d} duration)'.format(self.t_sleep, warmup, duration))
+        time.sleep(self.t_sleep)
+
+        metrics = {}
+        for metric_name, metric in config['metrics'].items():
+            group_name = metric['use_as_instance_id']
+            assert group_name, 'Property "use_as_instance_id" for metric "{}" has to be set. ' \
+                               'It tells the driver what scope parameter to use when defining ' \
+                               'instance id for particular metric.'.format(metric_name)
+            query = metric['query'].replace(' ', '')
 
             # query datadog:  measure
             qval = self.query_datadog_metric(query, duration, metric_name, group_name)
