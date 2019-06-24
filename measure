@@ -60,6 +60,7 @@ class Datadog(Measure):
         assert len(data['metrics']) > 0, \
             'Datadog server returned empty list of metrics'
         metrics = {m: {} for m in data['metrics']}
+        time.sleep(2)
         return metrics
 
     # overwrites super
