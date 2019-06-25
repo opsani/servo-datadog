@@ -45,22 +45,28 @@ def inst_id(metric, metric_name, group_name):
 
 class Datadog(Measure):
 
+    @staticmethod
+    def get_config(path=CONFIG_FPATH):
+        try:
+            config = yaml.load(open(path))['datadog']
+            assert config and config.get('metrics'), 'No metrics has been provided at path "datadog.metrics" ' \
+                                                     'in file located at {}'.format(path)
+            return config
+        except yaml.YAMLError as e:
+            e.__cause__ = 'Error parsing config file located at {}: {}'.format(path, e.__cause__)
+            raise
+        except KeyError:
+            raise KeyError('No `datadog` configuration has been provided in config file located '
+                           'at {}'.format(path))
+
     # overwrites super
     def describe(self):
-
         # get dict of metrics active in the last 24 hours
         self.init_datadog()
-        from_time = int(time.time()) - (60 * 60 * 24)
-        data = dog.Metric.list(from_time)
-        self.debug('Datadog describe response: ', data)
-
-        # validate and return metrics
-        assert 'metrics' in data, \
-            'Datadog server did not return list of active metrics'
-        assert len(data['metrics']) > 0, \
-            'Datadog server returned empty list of metrics'
-        metrics = {m: {} for m in data['metrics']}
-        time.sleep(2)
+        config = self.get_config()
+        metrics = {}
+        for name, metric in config['metrics'].items():
+            metrics[name] = {'unit': metric.get('unit', '')}
         return metrics
 
     # overwrites super
@@ -72,14 +78,7 @@ class Datadog(Measure):
 
     # overwrites super
     def measure(self):
-        try:
-            config = yaml.load(open(CONFIG_FPATH))['datadog']
-        except yaml.YAMLError as e:
-            e.__cause__ = 'Error parsing config file located at {}: {}'.format(CONFIG_FPATH, e.__cause__)
-            raise
-        except KeyError:
-            raise KeyError('No `datadog` configuration has been provided in config file located '
-                           'at {}'.format(CONFIG_FPATH))
+        config = self.get_config()
         # parse and valcheck control configuration
         assert 'control' in self.input_data, 'Input data missing control configuration'
         control  = self.input_data['control']
@@ -87,8 +86,6 @@ class Datadog(Measure):
         duration = int(control.get('duration', DFLT_DURATION))
         assert warmup >= 0 and duration >= 0, \
             'Both warmup {} and duration {} must be non-negative'.format(warmup, duration)
-        assert config and config.get('metrics'), 'No metrics has been provided at path "datadog.metrics" ' \
-                                                 'in file located at {}'.format(CONFIG_FPATH)
 
         self.init_datadog()
 
