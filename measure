@@ -7,6 +7,7 @@ import time
 import yaml
 from datadog import initialize
 from datadog import api as dog
+from datadog.api.exceptions import ApiError
 
 from measure import Measure, ST_FAILED
 
@@ -160,10 +161,16 @@ class Datadog(Measure):
         # initialize datadog api module
         options = {
             'api_key': self.datadog_api_key,
-            'app_key': self.datadog_app_key
+            'app_key': self.datadog_app_key,
+            'mute': False,
         }
         try:
             initialize(**options)
+            try:
+                dog.Metric.query(start=0, end=1, query='system.cpu.user{*}')
+            except ApiError as e:
+                e.args += ('Unable to confirm connectivity to Datadog API servers.',)
+                raise
         except Exception as e:
             raise Exception('Failed to initialize Datadog API module. Error: {}'.format(str(e)))
 
