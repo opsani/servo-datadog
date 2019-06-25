@@ -20,8 +20,8 @@ DFLT_DURATION   = 120
 DFLT_TIME_AGGR  = 'avg'
 DFLT_SPACE_AGGR = 'avg'
 AGGR_OPERATORS  = ('avg', 'max', 'min', 'sum', 'raw')
-API_KEY_FPATH   = '/etc/optune-datadog-auth/api_key'
-APP_KEY_FPATH   = '/etc/optune-datadog-auth/app_key'
+API_KEY_FPATH   = os.getenv('OPTUNE_DATADOG_API_KEY_PATH', '/etc/optune-datadog-auth/api_key')
+APP_KEY_FPATH   = os.getenv('OPTUNE_DATADOG_APP_KEY_PATH', '/etc/optune-datadog-auth/app_key')
 CONFIG_FPATH    = os.getenv('CONFIG_FPATH', './config.yaml')
 
 
