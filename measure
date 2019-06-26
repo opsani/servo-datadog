@@ -37,7 +37,7 @@ def inst_id(metric, metric_name, group_name):
 
     # try to interpret as tag:value,tag:value, ...
     # e.g.: kube_deployment:c1,kube_namespace:lk
-    tags = dict([tag.split(':') for tag in scope.split(',')])
+    tags = dict([tag.split(':', 1) for tag in scope.split(',')])
 
     assert group_name in tags, 'Cannot find group {} in response on metric "{}"'.format(group_name, metric_name)
 
