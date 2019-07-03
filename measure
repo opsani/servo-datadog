@@ -164,15 +164,16 @@ class Datadog(Measure):
             'app_key': self.datadog_app_key,
             'mute': False,
         }
-        try:
-            initialize(**options)
-            try:
-                dog.Metric.query(start=0, end=1, query='system.cpu.user{*}')
-            except ApiError as e:
-                e.args += ('Unable to confirm connectivity to Datadog API servers.',)
-                raise
-        except Exception as e:
-            raise Exception('Failed to initialize Datadog API module. Error: {}'.format(str(e)))
+        initialize(**options)
+        # try:
+        #     initialize(**options)
+        #     try:
+        #         dog.Metric.query(start=0, end=1, query='system.cpu.user{*}')
+        #     except ApiError as e:
+        #         e.args += ('Unable to confirm connectivity to Datadog API servers.',)
+        #         raise
+        # except Exception as e:
+        #     raise Exception('Failed to initialize Datadog API module. Error: {}'.format(str(e)))
 
     # helper:  query datadog metrics over last duration seconds and return
     # value computed from aggregating in time and space
