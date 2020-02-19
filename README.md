@@ -1,22 +1,22 @@
 # servo-datadog
+
 Optune servo driver for Datadog
 
 Note: this driver requires `measure.py` base class from the Optune servo core. It can be copied or symlinked here as part of packaging
 
-Datadog metric queries are comprised of a metric name and, typically, one or more modifications.  For example, the query:
-```
+Datadog metric queries are comprised of a datadog metric name and, typically, one or more modifications.  For example, the query:
+
+```none
 docker.net.bytes_sent{kube_namespace:abc}by{kube_deployment}
 ```
+
 returns a *group* of time series pointlists, one for *each* k8s deployment in the `abc` namespace, where each point of each pointlist includes the value of the metric `docker.net.bytes_sent`.  
 
-The driver presently returns a single value for a metric named `perf`.  This value is computed from the time series pointlist(s) returned from a single query as follows:
+The driver's `measure` command presently returns one or more timeseries metrics with each configured metric name containing a `values` list with items grouped by the tag value of the tag key specified by the configuration of `use_as_instance_id`. Each `values` list item contains an `id` of said tag value and a `data` list in the form of `[[POSIX_timestamp, numeric_value], ...]`. The `measure` command requires a `control` dictionary be included in its input; this section may optionally specify a `warmup` and/or `duration` value to override the driver's defaults
 
-* time aggregation:  aggregate each time series pointlist to produce a single value using one of these methods:  avg, max, min, sum
-* space aggregation:  aggregate the time aggregates to produce a single value (perf metric) using one of these methods:  avg, max, min, sum (if there is just one pointlist, these are all the same)
+The `describe` command returns the list of configured metric names as well as their units. By itself, a configured metric name is often not a valid query, and such a query will return an error.
 
-The Datadog driver does not presently support multiple queries (e.g., so that a performance metric may be created by a formula using multiple query results).  The `describe` command returns the list of active metric names.  By itself, a metric name is often not a valid query, and such a query will return an error.
-
-# servo configuration
+## servo configuration
 
 A servo which uses this measure driver requires the Datadog api key and app key, which are used to authenticate with the Datadog API server, to exist in the following files:
 
@@ -26,74 +26,55 @@ A servo which uses this measure driver requires the Datadog api key and app key,
 These files can be automatically created on a Kubernetes servo using a secret mounted as `/etc/optune-datadog-auth`.  See the following example.
 
 Create a secret in namespace `abc` using kubectl:
-```
+
+```bash
 kubectl -n abc create secret generic optune-datadog-auth \
 --from-literal=api_key='<my_value>' \
 --from-literal=app_key='<my_value>'
 ```
 
 Configure the servo deployment YAML descriptor:
-```
+
+```yaml
 spec:
   template:
     spec:
       volumes:
       - name: datadog
         secret:
-          secretName: optune-datadog-auth   
+          secretName: optune-datadog-auth
       containers:
       -name main
         ...
         volumeMounts:
         - name: datadog
           mountPath: '/etc/optune-datadog-auth'
-          readOnly: true               
+          readOnly: true
 ```
 
-# driver configuration
+## driver configuration
 
-In addition to the standard `warmup` and `duration` configuration, the driver measurement control specification provides for configuring the Datadog query, and the method(s) for computing a single `perf` result, using the free-from `userdata` section of the operator override descriptor (e.g., an app-desc.yaml provided to the server).  For example:
+The driver requires a `datadog` section be included in the config file (usually located in a config.yaml file in the local folder though this location can be overriden with the environment variable `CONFIG_FPATH`). The section must contain a `metrics` sub-section of one or more metrics; each key within will be used as the metric name during the `describe` and `measure` commands. The values of each metric name key must include the following:
 
-```
-measurement:
-  control:
-    warmup:    30
-    duration:  130
-    userdata:
-      query:  'docker.net.bytes_sent{kube_namespace:abc}by{kube_deployment}'
-      time_aggr:   avg       # compute time-series value as the average
-      space_aggr:  sum       # compute group value (the perf metric) as
-                             # the sum of all time series aggregate values
-      pre_cmd_async:  'ab -c 10 -rkl -t 1000 http://c4:8080/'
-```
+* A `query` to be issued to the datadog API
+* A `use_as_instance_id` which identifies the tag key to be used in grouping the returned query data
+* (optional) A `unit` to be returned with the metric name during the `describe` command
 
-* `warmup`:  period after adjustment when a measurement is not taken (sleep).  Default 0 seconds.
-* `duration`:  period of measurement.  Default 120 seconds.
-* `query`: a Datadog metric time series query.  Required. 
-* `time_aggr`:  aggregation method for time series pointlists.  One of avg|max|min|sum.  Default `avg`.
-* `space_aggr`:  aggregation method for time series aggregate values - used to create a single `perf` metric value.  One of avg|max|min|sum.  Default `avg`.
-* `pre_cmd_async`:  Bash shell command to execute prior to warmup.  This optional command may be a string or a list.  This command is executed asynchronously with stdout/stderr directed to /dev/null.  If the process is still running after measurement, it is terminated.  This command is suitable for generating load during measurement, typically for testing purposes, as in the example above.
-* `pre_cmd`:  Bash shell command to execute prior to warmup.  This optional command may be a string or a list.
-* `post_cmd`:  Bash shell command to execute after measurement.  This optional command may be a string or a list.
+For example:
 
-__FUTURE__:  when this driver supports multiple queries (and user-named metrics), the configuration for `query`, `time_aggr` and `space_aggr` may be provided for each user-named metric, in the `metrics` section of the descriptor rather than the `control` section, e.g.:
-
-```
-measurement:
-  control:
-    warmup:    30
-    duration:  130
+```yaml
+datadog:
   metrics:
-    my_tx:  # user-named metric
-      ...   # max, min, value, etc.
-      userdata:
-        query: 'docker.net.bytes_sent{kube_namespace:abc}by{kube_deployment}'
-        time_aggr:   avg
-        space_aggr:  sum
-    my_cpu_usage:  # user-named metric
-      ...
-      userdata:
-        query: 'docker.cpu.usage{kube_namespace:abc}'
-        time_aggr:   avg
-        space_aggr:  avg
+    cpu_usage:
+      query: kubernetes.cpu.usage.total{kube_namespace:default}by{pod_name}
+      use_as_instance_id: pod_name
+      unit: millicores
+    memory_usage:
+      query: kubernetes.memory.usage{kube_namespace:default}by{pod_name}
+      use_as_instance_id: pod_name
+      unit: bytes
+    replicas:
+      query: kubernetes.pods.running{kube_namespace:default}by{kube_namespace}
+      use_as_instance_id: kube_namespace
+      unit: bytes
 ```
