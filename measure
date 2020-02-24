@@ -49,7 +49,7 @@ class Datadog(Measure):
     @staticmethod
     def get_config(path=CONFIG_FPATH):
         try:
-            config = yaml.load(open(path))['datadog']
+            config = yaml.safe_load(open(path))['datadog']
             assert config and config.get('metrics'), 'No metrics has been provided at path "datadog.metrics" ' \
                                                      'in file located at {}'.format(path)
             return config
